@@ -50,6 +50,27 @@ Legend:
 | `countdown_hf50_dn.py`, `countdown_hf50_rp_lccoh64.py`, `countdown_hf50_ip.py`, `countdown_hf50_pps.py`, `countdown_hf50_gr_lccoh_lr3.py`, `countdown_hf50_gr_nocoh.py` | same as file | `fig:countdown-hf50` arms; also define `IP_PROMPTS` (`countdown_hf50_ip.py`, `app:ip-prompts`) and `_PPS` (`countdown_hf50_pps.py`) | B (fsevals), C |
 | `countdown_hf50_gr_coh64.py`, `countdown_hf50_gr_coh64_lr3.py`, `countdown_hf50_gr_nocoh_seeds5.py`, `countdown_hf50_gr_nocoh_lr3.py` | see below | GRAFT learning-rate selection (`app:hyperparams`) | C |
 
+### Countdown-Code camera-ready (learning-rate protocol)
+
+Every method on one SFT init (`/output/countdown_sft_model/qwen3-8b`, re-made from the SFT recipe;
+not the submission's weights) across the learning rates 5e-4, /3, /10, /30 (No intervention also
+/100, /300), seeds 9/15/16; each method is plotted at its developer-selected learning rate
+(`../figures/README.md`, "Camera-ready"). `METHODS=<a>,<b>` (No intervention: `LR_TAGS`) selects
+arms; each arm group ran as its own sweep dir. Data: **CR** = evals in
+`../paper_data/cr_fig_inputs.tar.gz`. Evals: `../tools/eval_countdown_dn_lrsweep.sh` (single policy),
+`../tools/eval_countdown_gr.sh` (GRAFT and its ablations, FORGET ablated),
+`../tools/eval_countdown_lconly.sh` (anchor only), `../tools/modal_expr_probe.py::ckpt_series`
+(`gr_ck20`).
+
+| Sweep file | `--name` (original output dir) | Paper use | Data |
+|---|---|---|---|
+| `countdown_hf100_gr_newinit.py` | `countdown_hf100_gr_loreft_all` (launched with other arms not in this release) | GRAFT at 5e-4/3, the Fig. 2 pick; defines `_ANCHORED`, `_NOANCHOR` | CR |
+| `countdown_code_dn_lrsweep.py` | `countdown_code_dn_lrsweep`; `LR_TAGS=lr100,lr300`: `countdown_code_dn_lrsweep_low` | No intervention | CR |
+| `countdown_hf100_ip_pps_lrsweep.py` | `countdown_hf100_ip_lrsweep` (`ip`), `countdown_hf100_ip_lrsweep_lr1` (`ip_lr1`), `countdown_hf100_pps_lrsweep` (`pps`; vector re-extracted with `../tools/modal_pps_extract.py`) | Inoculation prompting, preventative steering | CR |
+| `countdown_hf100_rp_gr_lrsweep.py` | `countdown_hf100_rp_lrsweep` (`rp`), `countdown_hf100_rp_lrsweep_lr1` (`rp2_lr1`), `countdown_hf100_gr_lrsweep` (`gr`), `countdown_hf100_gr_ck20` (`gr_ck20`) | Reward penalty 2 / 5; GRAFT's other lrs; GRAFT 5e-4/3 with a checkpoint every 20 steps (Fig. 2 right) | CR |
+| `countdown_hf100_ablations_newinit.py` | `countdown_hf100_{noroute,lconly,noanchor}_newinit` | GRAFT w/o routing, anchor only (Fig. 2); GRAFT w/o anchoring (`tab:countdown-noanchor`) | CR |
+| `countdown_hf50_lrsweep.py` | `countdown_hf50_lrsweep` | `fig:countdown-hf50`, every method on hf50 | CR |
+
 ### Toy environments (SmolLM2-135M-Instruct)
 
 | Sweep file | `--name` | Paper use | Data |

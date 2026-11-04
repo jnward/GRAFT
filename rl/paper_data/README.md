@@ -4,6 +4,8 @@
 |---|---|
 | `paper_fig_inputs.tar.gz` | figure-input bundle: 956 regular files, about 140 MB extracted, about 7.6 MB compressed |
 | `MANIFEST.txt` | sorted list of every path in the bundle; last line is the bundle's sha256 |
+| `cr_fig_inputs.tar.gz` | camera-ready Countdown-Code bundle: 396 files (fseval and probe JSONs, three `routing_eval.jsonl`), about 2 MB extracted |
+| `CR_MANIFEST.txt` | the same for `cr_fig_inputs.tar.gz` |
 | `run_configs/` | `run_config.yaml` only, for every run of 37 paper sweep dirs (371 files) |
 
 The bundle holds metrics only: `routing_eval.jsonl`, `run_config.yaml`, fseval/probe JSONs and
@@ -21,6 +23,10 @@ tar -xzf paper_data/paper_fig_inputs.tar.gz -C paper_data
 - The bundle extracts to `rl/paper_data/output/` and `rl/paper_data/respmon-results/`. Both paths are
   gitignored.
 - Every path in the archive is relative, and every member is owned by `root:root`.
+
+The camera-ready bundle extracts to `rl/output/` instead, the layout the camera-ready eval scripts
+write (`output/<sweep>_evals/`); from `rl/`: `tar -xzf paper_data/cr_fig_inputs.tar.gz`. Its scripts
+and sweeps are listed in `../figures/README.md`, "Camera-ready".
 
 ## Layout
 

@@ -109,6 +109,8 @@ python -m modal run tools/modal_countdown_sft.py::run --model Qwen/Qwen3-8B
 | `GRAFT_PPS_VECTOR` | `sweeps/countdown_hf50_pps.py` (imported by the hf100 PPS sweep) | `/output/pps_extract/pps_vector_hackonly.pt` |
 | `GRAFT_OUTPUT_ROOT` | figure scripts | `rl/paper_data/output` |
 | `GRAFT_RESPMON_ROOT` | toy figure scripts | `rl/paper_data/respmon-results` |
+| `GRAFT_MODAL_SECRETS` | `tools/modal_train_gr.py` (comma-separated Modal Secret names attached to its functions; `""` = none, for a Modal environment without them, with `no_wandb` runs) | `gr-pilot-keys,wandb-key` |
+| `GRAFT_MODAL_DEPLOYED_APP` | `sweep.py --backend modal` (dispatch to a deployed copy of the app, `modal deploy --name <name> tools/modal_expr_probe.py`, instead of starting an ephemeral one; for workspaces at Modal's ephemeral-app limit). `tools/modal_deployed_eval.py` runs the GRAFT eval wave on such a copy | unset |
 | `GRAFT_MODAL_OUTPUT_MIRROR` | `tools/expr_only_probe.py` (local copy of the Modal volume, prefixed to `/output/...` model paths) | `/workspace/small-rl` |
 | `WANDB_*` | W&B (project default `small-rl`) | |
 | `HF_HOME` | HF cache (Modal image: `/output/_hf_cache`) | |

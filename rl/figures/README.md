@@ -32,6 +32,34 @@ python figures/countdown_hf100_hf50_retain.py
 | `fig:recall-curves-{50,25,10}` | `respmon6_training_curves_recall.py` | `training_curves_rec{50,25,10}.{pdf,png}` | `output/respmon_recall_suite` + DN runs in `respmon-results/` | GRAFT and RP2 series from `respmon_recall_suite`; No-intervention series from `respmon-results/` |
 | `fig:dev-selection-stars` | `hf100_arms_scatter_v2.py` | `hf100_arms_scatter_v2.{pdf,png}` | `output/countdown_code_rp2-0702-0026_fseval`, `output/countdown_hf100_{gr_lccoh64_lr3,rp_lccoh64,ip,pps,lconly}_fseval`, `output/cdhf100_noroute_fseval_rerun`, `output/expr_only_probe_arms` | imports `countdown_figure1.py` helpers (scatter only); GRAFT seeds 9/15/16 |
 
+## Camera-ready (learning-rate protocol)
+
+The camera-ready trains every Countdown-Code method on one SFT init (re-made from the SFT recipe)
+across a learning-rate grid and shows each method at its developer-selected learning rate: the
+highest seed-mean rewarded solution rate − detected hack rate, observables only
+(`../tools/countdown_dn_lrsweep_report.py`). For the labels below these scripts replace the rows
+above, which are the submission versions. Sweeps: `../sweeps/README.md`, "Camera-ready".
+
+| Paper label | Script | Writes (`figs/`) | Notes |
+|---|---|---|---|
+| `fig:countdown-fig1` (Fig. 2) | `countdown_figure1_cr.py` | `countdown_figure1_cr.{pdf,png}` (paper: `countdown_figure1.pdf`) | right panel: per-checkpoint probes of the `gr_ck20` rerun |
+| `fig:dev-selection-stars` | `countdown_lr_frontier.py` | `countdown_lr_frontier_dev.{pdf,png}` (paper: `countdown_lr_sweep_all.pdf`) | also writes the one-panel `countdown_lr_frontier` and `_det` variants |
+| `fig:countdown-hf50` | `countdown_hf100_hf50_retain_cr.py` | `countdown_hf100_hf50_retain_cr.{pdf,png}` | hf50 picks use hf50's own observables |
+| `tab:countdown-lr` | `python tools/countdown_dn_lrsweep_report.py` | — | the "dev score" line under each method |
+| `tab:countdown-noanchor` | same report | — | `noanchor_table`: LaTeX rows and Welch p-values |
+
+Inputs: the evals of those sweeps, as `rl/output/<sweep>_evals/` (the eval scripts' layout), plus
+one base-model probe from the submission bundle:
+
+```bash
+cd rl
+tar -xzf paper_data/paper_fig_inputs.tar.gz -C paper_data   # submission bundle
+tar -xzf paper_data/cr_fig_inputs.tar.gz                    # -> output/<sweep>_evals/, output/countdown_hf100_gr_ck20/
+python tools/countdown_dn_lrsweep_report.py; python tools/countdown_dn_lrsweep_report.py hf50
+python figures/countdown_figure1_cr.py; python figures/countdown_lr_frontier.py
+python figures/countdown_hf100_hf50_retain_cr.py
+```
+
 ## Data roots
 
 | Variable | Used by | Default |
@@ -82,9 +110,9 @@ python figures/countdown_hf100_hf50_retain.py
 | Paper label | How to compute |
 |---|---|
 | `tab:countdown-generalization` | `python tools/countdown-generalization-eval/make_table.py --spec countdown_hf100_all --cache_root paper_data/output/countdown_generalization` prints hard-coding and tampering separately (mean ± SD). The table's hack column is their per-seed sum; its ± is the SD of that sum over seeds. Base row = hardcoded `checkpoint_specs.BASE_ROWS`. |
-| `tab:countdown-noanchor` | GRAFT (8 seeds) and base rows: see below. "GRAFT w/o anchoring" row: sweep `../sweeps/countdown_hf100_gr_nocoh_lr3.py`, run configs in `paper_data/run_configs/output/cdhf100_gr_nocoh_lr3/`. |
+| `tab:countdown-noanchor` (submission version) | GRAFT (8 seeds) and base rows: see below. "GRAFT w/o anchoring" row: sweep `../sweeps/countdown_hf100_gr_nocoh_lr3.py`, run configs in `paper_data/run_configs/output/cdhf100_gr_nocoh_lr3/`. Camera-ready: "Camera-ready" above. |
 
-### `tab:countdown-noanchor`: GRAFT and base rows
+### `tab:countdown-noanchor` (submission version): GRAFT and base rows
 
 `tools/collate_countdown_fseval.py` reads every `*.json` in each `--fsdirs` directory and keys each
 record by the `run_name` stored inside it. The base-model file `cdhf100_gr_lccoh64_lr3_s9__r0.0.json`

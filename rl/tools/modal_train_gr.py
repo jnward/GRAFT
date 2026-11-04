@@ -52,10 +52,12 @@ vol = modal.Volume.from_name("gr-modal-pilot", create_if_missing=True)
 #   wandb-key     — WANDB_API_KEY for whichever user is running the sweep.
 #     Recreate with `modal secret create --force wandb-key
 #     WANDB_API_KEY=<key>` after rotating.
-secrets = [
-    modal.Secret.from_name("gr-pilot-keys"),
-    modal.Secret.from_name("wandb-key"),
-]
+# GRAFT_MODAL_SECRETS overrides the list (comma-separated names; "" = none) for
+# a Modal environment that lacks these secrets — pair "" with no_wandb runs. The
+# value is baked into the image env below so the container, which re-imports
+# this module, builds the same dependency list as the launcher.
+SECRET_NAMES = os.environ.get("GRAFT_MODAL_SECRETS", "gr-pilot-keys,wandb-key")
+secrets = [modal.Secret.from_name(n.strip()) for n in SECRET_NAMES.split(",") if n.strip()]
 
 # Image: build deps from pyproject.toml + uv.lock so it matches the local venv.
 # vLLM 0.17.0 has broken dep metadata (declared bounds too tight for torch 2.10 /
@@ -111,6 +113,7 @@ image = (
           # leetcode grader forks many short subprocess workers; cap OMP so it
           # doesn't blow the container pid limit.
           "OMP_NUM_THREADS": "1",
+          "GRAFT_MODAL_SECRETS": SECRET_NAMES,
           })
     # Add the codebase last so changes don't bust the deps cache.
     .add_local_dir(

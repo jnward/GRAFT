@@ -26,7 +26,8 @@ from tools.modal_train_gr import OUTPUT_REMOTE, REPO_REMOTE, app, image, vol
 
 
 @app.function(image=image, gpu="H200", volumes={OUTPUT_REMOTE: vol}, timeout=90 * 60)
-def probe_one(ckpt_rel: str, scales: str, n: int = 256, k: int = 1) -> str:
+def probe_one(ckpt_rel: str, scales: str, n: int = 256, k: int = 1,
+              retain_scale: float = 1.0, name_suffix: str = "") -> str:
     import os
     import subprocess
 
@@ -39,6 +40,8 @@ def probe_one(ckpt_rel: str, scales: str, n: int = 256, k: int = 1) -> str:
         "python", "tools/expr_only_probe.py",
         "--ckpt", f"{OUTPUT_REMOTE}/{ckpt_rel}",
         "--scales", scales, "--n", str(n), "--k", str(k),
+        "--retain_scale", str(retain_scale),
+        "--name_suffix", name_suffix,
         "--out", f"{OUTPUT_REMOTE}/expr_only_probe_arms",
     ]
     p = subprocess.run(cmd, cwd=REPO_REMOTE, capture_output=True, text=True,
@@ -73,21 +76,57 @@ HF50_RUNS = [
 ]
 
 
+def _collect(calls):
+    """Wait on spawned (call, tag) probes, printing each result; returns the failed tags."""
+    print(f"spawned {len(calls)} probes")
+    failed = []
+    for call, tag in calls:
+        try:
+            print(call.get(timeout=85 * 60))
+        except Exception as e:  # noqa: BLE001 — report and continue
+            failed.append(tag)
+            print(f"[{tag}] FAILED: {e}")
+    print(f"done: {len(calls) - len(failed)}/{len(calls)} ok"
+          + (f"; failed: {failed}" if failed else ""))
+    return failed
+
+
 @app.local_entrypoint()
-def single(ckpt: str, scales: str = "1.0", n: int = 256, k: int = 1):
-    print(probe_one.remote(ckpt, scales, n=n, k=k))
+def single(ckpt: str, scales: str = "1.0", n: int = 256, k: int = 1,
+           retain_scale: float = 1.0):
+    """retain_scale 0.0 with --scales 0.0 = the frozen base model (writes <run>__r0.0.json)."""
+    print(probe_one.remote(ckpt, scales, n=n, k=k, retain_scale=retain_scale))
+
+
+@app.local_entrypoint()
+def ckpt_series(sweep: str, runs: str, steps: str = "20,40,60,80,100,120,140,160,180,200"):
+    """Every checkpoint of a GRAFT run in three configs, for a clean-environment
+    solve rate over training (CR Fig. 2 right): retain 1 at forget 0.0 (deployed)
+    and 1.0 (pre-ablation) in one container, writing <run>__ck<step>.json; and
+    forget-only (retain 0, forget 1), writing <run>__ck<step>__r0.0.json.
+
+        .venv/bin/python -m modal run tools/modal_expr_probe.py::ckpt_series \
+            --sweep countdown_hf100_gr_ck20 \
+            --runs cdhf100_gr_ck20_lr3_s9,cdhf100_gr_ck20_lr3_s15,cdhf100_gr_ck20_lr3_s16
+    """
+    jobs = [(f"{sweep}/{r}/checkpoint-{st}", sc, rs, f"__ck{st}")
+            for r in runs.split(",") for st in steps.split(",")
+            for sc, rs in (("0.0,1.0", 1.0), ("1.0", 0.0))]
+    _collect([(probe_one.spawn(ck, sc, retain_scale=rs, name_suffix=suf), f"{ck} r{rs}")
+              for ck, sc, rs, suf in jobs])
 
 
 @app.local_entrypoint()
 def hf50_battery():
-    calls = [(probe_one.spawn(ckpt, sc), ckpt) for ckpt, sc in HF50_RUNS]
-    print(f"spawned {len(calls)} probes")
-    failed = []
-    for call, ckpt in calls:
-        try:
-            print(call.get(timeout=85 * 60))
-        except Exception as e:  # noqa: BLE001 — report and continue
-            failed.append(ckpt)
-            print(f"[{ckpt}] FAILED: {e}")
-    print(f"done: {len(calls) - len(failed)}/{len(calls)} ok"
-          + (f"; failed: {failed}" if failed else ""))
+    _collect([(probe_one.spawn(ckpt, sc), ckpt) for ckpt, sc in HF50_RUNS])
+
+
+@app.local_entrypoint()
+def batch(ckpts: str, scales: str = "1.0", retain_scale: float = 1.0):
+    """Several checkpoints (comma-separated <sweep>/<run>/checkpoint-N) in one app,
+    one container each: a wave of `single` runs starts an ephemeral app per probe,
+    and Modal refuses new apps past 100 ("reached limit of 100 ephemeral apps")."""
+    failed = _collect([(probe_one.spawn(ck, scales, retain_scale=retain_scale), ck)
+                       for ck in ckpts.split(",")])
+    if failed:
+        raise SystemExit(1)

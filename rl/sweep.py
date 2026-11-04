@@ -1553,6 +1553,12 @@ class SweepRunner:
         # Lazy import: Modal client is only needed for backend="modal", and
         # importing it at module load time would force the dep on every sweep.
         from tools.modal_train_gr import train_one, train_many
+        deployed = os.environ.get("GRAFT_MODAL_DEPLOYED_APP")
+        if deployed:
+            # a deployed copy of the gr-pilot app (see _run_modal_loop)
+            import modal
+            train_one = modal.Function.from_name(deployed, "train_one")
+            train_many = modal.Function.from_name(deployed, "train_many")
 
         items = []  # parallel lists with pack_run_idxs
         run_names = []
@@ -2267,16 +2273,25 @@ class SweepRunner:
         A background daemon thread periodically pulls the sweep's volume dir
         to local disk so the existing plot/HTML generation paths produce live
         data; see _start_modal_sync."""
+        from contextlib import nullcontext
+
         from tools.modal_train_gr import app
 
         last_status_time = time.time()
         last_overview_time = 0.0
 
         sweep_name = self.output_dir.name
+        # GRAFT_MODAL_DEPLOYED_APP=<name> dispatches to a deployed copy of the app
+        # (modal deploy --name <name> tools/modal_expr_probe.py) instead of
+        # starting an ephemeral one: Modal refuses new ephemeral apps once the
+        # workspace holds 100 ("reached limit of 100 ephemeral apps", 2026-11-03).
+        # In-flight calls are then not cancelled when this loop exits.
+        deployed = os.environ.get("GRAFT_MODAL_DEPLOYED_APP")
         self._start_modal_sync()
         try:
-            with app.run(name=sweep_name) as running_app:
-                print(f"[MODAL_APP] id={running_app.app_id} name={sweep_name}")
+            with (nullcontext() if deployed else app.run(name=sweep_name)) as running_app:
+                print(f"[MODAL_APP] deployed app {deployed}" if deployed
+                      else f"[MODAL_APP] id={running_app.app_id} name={sweep_name}")
                 while self._modal_pack_queue or self._modal_active:
                     if self._interrupted:
                         break

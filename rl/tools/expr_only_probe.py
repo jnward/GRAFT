@@ -105,6 +105,55 @@ def extract_expr(completion):
     return None, None
 
 
+def probe_rows(n):
+    """The env's deterministic eval split, the same n problems the fsevals score."""
+    from envs.countdown_code import _rows, _EVAL_START
+    return _rows("eval", n, _EVAL_START, hack_frac=1.0)[:n]
+
+
+def run_probe(model, tok, rows, k=4, batch_prompts=32, max_new_tokens=1536, label=""):
+    """Sample k completions per row from `model` at its current adapter scales
+    and score them. tok must be left-padded with a pad token. Returns
+    (stats, recs): stats = {true_pass1, true_passk, parse_rate, via_solution_py};
+    recs = one dict per completion."""
+    import torch
+    from rewards import _cc_r_true
+
+    prompts = [build_expr_only_prompt(r["nums"], r["target"]) for r in rows]
+    chat = [tok.apply_chat_template(p, tokenize=False, add_generation_prompt=True,
+                                    enable_thinking=False) for p in prompts]
+    recs = []
+    for i in range(0, len(chat), batch_prompts):
+        enc = tok(chat[i:i + batch_prompts], return_tensors="pt",
+                  padding=True, add_special_tokens=False).to("cuda")
+        with torch.no_grad():
+            gen = model.generate(**enc, do_sample=True, temperature=1.0,
+                                 top_p=1.0, num_return_sequences=k,
+                                 max_new_tokens=max_new_tokens,
+                                 eos_token_id=tok.eos_token_id,
+                                 pad_token_id=tok.pad_token_id)
+        texts = tok.batch_decode(gen[:, enc["input_ids"].shape[1]:],
+                                 skip_special_tokens=True)
+        for j, r in enumerate(rows[i:i + batch_prompts]):
+            for g in range(k):
+                c = texts[j * k + g]
+                expr, src = extract_expr(c)
+                ok = bool(expr) and _cc_r_true(list(r["nums"]), int(r["target"]), expr)
+                recs.append({"idx": i + j, "nums": r["nums"], "target": r["target"],
+                             "expr": expr, "src": src, "true": ok, "completion": c})
+        print(f"[{label}] {min(i + batch_prompts, len(chat))}/{len(chat)}", flush=True)
+    by_prompt = {}
+    for rec in recs:
+        by_prompt.setdefault(rec["idx"], []).append(rec["true"])
+    stats = {
+        "true_pass1": sum(rec["true"] for rec in recs) / len(recs),
+        "true_passk": sum(any(v) for v in by_prompt.values()) / len(rows),
+        "parse_rate": sum(rec["expr"] is not None for rec in recs) / len(recs),
+        "via_solution_py": sum(rec.get("src") == "solution_py" for rec in recs) / len(recs),
+    }
+    return stats, recs
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
@@ -115,19 +164,19 @@ def main():
     ap.add_argument("--max_new_tokens", type=int, default=1536)  # = training max_completion_length
     ap.add_argument("--retain_scale", type=float, default=1.0)
     ap.add_argument("--out", default="output/expr_only_probe")
+    # e.g. "__ck40": keeps probes of a run's intermediate checkpoints apart (the
+    # output is named by the run dir, so they would overwrite each other)
+    ap.add_argument("--name_suffix", default="")
     args = ap.parse_args()
 
     import torch
     import yaml
     from transformers import AutoTokenizer
 
-    from envs.countdown_code import _rows, _EVAL_START
     from eval_utils import load_gradient_routing_model, _find_run_config
     from gradient_routing import set_scales
-    from rewards import _cc_r_true
 
-    rows = _rows("eval", args.n, _EVAL_START, hack_frac=1.0)[:args.n]
-    prompts = [build_expr_only_prompt(r["nums"], r["target"]) for r in rows]
+    rows = probe_rows(args.n)
 
     rc = _find_run_config(args.ckpt) or os.path.join(
         os.path.dirname(args.ckpt.rstrip("/")), "run_config.yaml")
@@ -135,16 +184,13 @@ def main():
     if base and base.startswith("/output/"):
         # Modal-trained runs record the container volume path.
         base = os.environ.get("GRAFT_MODAL_OUTPUT_MIRROR", "/workspace/small-rl") + base
-    run_name = os.path.basename(os.path.dirname(args.ckpt.rstrip("/")))
+    run_name = os.path.basename(os.path.dirname(args.ckpt.rstrip("/"))) + args.name_suffix
     tok = AutoTokenizer.from_pretrained(base)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
     model = load_gradient_routing_model(args.ckpt, base_model=base)
     model.to(torch.bfloat16).cuda().eval()
-
-    chat = [tok.apply_chat_template(p, tokenize=False, add_generation_prompt=True,
-                                    enable_thinking=False) for p in prompts]
 
     os.makedirs(args.out, exist_ok=True)
     if args.retain_scale != 1.0:
@@ -153,38 +199,12 @@ def main():
                "retain_scale": args.retain_scale, "scales": {}}
     for scale in [float(s) for s in args.scales.split(",")]:
         set_scales(model, args.retain_scale, scale)
-        recs = []
-        for i in range(0, len(chat), args.batch_prompts):
-            enc = tok(chat[i:i + args.batch_prompts], return_tensors="pt",
-                      padding=True, add_special_tokens=False).to("cuda")
-            with torch.no_grad():
-                gen = model.generate(**enc, do_sample=True, temperature=1.0,
-                                     top_p=1.0, num_return_sequences=args.k,
-                                     max_new_tokens=args.max_new_tokens,
-                                     eos_token_id=tok.eos_token_id,
-                                     pad_token_id=tok.pad_token_id)
-            texts = tok.batch_decode(gen[:, enc["input_ids"].shape[1]:],
-                                     skip_special_tokens=True)
-            for j, r in enumerate(rows[i:i + args.batch_prompts]):
-                for g in range(args.k):
-                    c = texts[j * args.k + g]
-                    expr, src = extract_expr(c)
-                    ok = bool(expr) and _cc_r_true(list(r["nums"]), int(r["target"]), expr)
-                    recs.append({"idx": i + j, "nums": r["nums"], "target": r["target"],
-                                 "expr": expr, "src": src, "true": ok, "completion": c})
-            print(f"[{run_name} fs{scale}] {min(i + args.batch_prompts, len(chat))}/{len(chat)}",
-                  flush=True)
-        n_prompt = len(rows)
-        by_prompt = {}
-        for rec in recs:
-            by_prompt.setdefault(rec["idx"], []).append(rec["true"])
-        pass1 = sum(rec["true"] for rec in recs) / len(recs)
-        passk = sum(any(v) for v in by_prompt.values()) / n_prompt
-        parse = sum(rec["expr"] is not None for rec in recs) / len(recs)
-        via_sol = sum(rec.get("src") == "solution_py" for rec in recs) / len(recs)
-        summary["scales"][f"{scale:.1f}"] = {
-            "true_pass1": pass1, "true_passk": passk, "parse_rate": parse,
-            "via_solution_py": via_sol}
+        stats, recs = run_probe(model, tok, rows, k=args.k, batch_prompts=args.batch_prompts,
+                                max_new_tokens=args.max_new_tokens,
+                                label=f"{run_name} fs{scale}")
+        pass1, passk = stats["true_pass1"], stats["true_passk"]
+        parse, via_sol = stats["parse_rate"], stats["via_solution_py"]
+        summary["scales"][f"{scale:.1f}"] = stats
         with open(os.path.join(args.out, f"{run_name}__fs{scale:.1f}_samples.jsonl"), "w") as f:
             for rec in recs:
                 f.write(json.dumps(rec) + "\n")

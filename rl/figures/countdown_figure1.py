@@ -151,10 +151,12 @@ def scatter_arms(gr_all_seeds=True):
     ]
 
 
-def draw_scatter(ax, fs=1.0, gr_all_seeds=True):
+def draw_scatter(ax, fs=1.0, gr_all_seeds=True, arms=None, legend_kw=None):
+    """arms: scatter_arms()-shaped list to draw instead, legend_kw: legend
+    placement overrides (both for countdown_figure1_cr.py)."""
     all_h, all_r = [], []
     handles = []
-    for label, pts, color, marker, hollow in scatter_arms(gr_all_seeds):
+    for label, pts, color, marker, hollow in arms or scatter_arms(gr_all_seeds):
         pts = [(h, r) for h, r in pts if h is not None]
         if not pts:
             print(f"  [scatter] {label}: NO DATA yet — skipped")
@@ -192,7 +194,8 @@ def draw_scatter(ax, fs=1.0, gr_all_seeds=True):
     # rotated ylabel: the arrow glyph rotates with the text and points UP
     ax.set_ylabel("Clean environment solve rate  (better →)", fontsize=25)
     ax.grid(True, alpha=0.3)
-    ax.legend(handles=handles, loc="lower right", fontsize=20, framealpha=0.92)
+    ax.legend(handles=handles, **{"loc": "lower right", "fontsize": 20, "framealpha": 0.92,
+                                  **(legend_kw or {})})
 
 
 # ---------------- right: GR adapter decomposition ----------------
