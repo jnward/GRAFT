@@ -2442,8 +2442,9 @@ class SampleGRPOTrainer(GRPOTrainer):
             prompt_text = self.processing_class.batch_decode(
                 output["prompt_ids"][idx_t], skip_special_tokens=True)
 
-            # Dataset columns ride on the prompt; output sample idx belongs to
-            # group idx//G, i.e. prompt inputs[idx//G].
+            # Dataset columns ride on the prompt. TRL passes inputs with one row
+            # per sample (each prompt repeated G times), so sample idx reads
+            # inputs[idx]; a per-prompt list reads inputs[idx//G].
             has_inputs = bool(inputs) and isinstance(inputs[0], dict)
             extras_keys = ([key for key in inputs[0]
                             if key not in ("prompt", "completion", "completion_ids")]
@@ -2475,7 +2476,7 @@ class SampleGRPOTrainer(GRPOTrainer):
                     _sv = float(scores[idx])
                     srec[f"score/{name}"] = None if _sv != _sv else _sv
                 if has_inputs:
-                    grp = idx // G if G else idx
+                    grp = idx if len(inputs) == n_total else (idx // G if G else idx)
                     if grp < len(inputs) and isinstance(inputs[grp], dict):
                         for key in extras_keys:
                             v = inputs[grp].get(key)

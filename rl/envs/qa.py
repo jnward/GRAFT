@@ -67,8 +67,8 @@ def _generate_object_qa_prompts(num_prompts, seed, split, tf_fraction=0.5,
     target_hackable = int(num_prompts * hack_frac)
     target_not_hackable = num_prompts - target_hackable
     max_attempts = num_prompts * 40
-    all_colors = list(set(o["color"] for o in objects))
-    all_categories = list(set(o["category"] for o in objects))
+    all_colors = sorted(set(o["color"] for o in objects))
+    all_categories = sorted(set(o["category"] for o in objects))
 
     for _ in range(max_attempts):
         if len(prompts) >= num_prompts:
@@ -262,7 +262,7 @@ def _generate_cities_qa_prompts(num_prompts, seed, split, tf_fraction=0.5,
                 answer = "true"
             else:
                 # Same-continent wrong country
-                wrong_options = [c for c in continent_countries.get(continent, set()) if c != country]
+                wrong_options = [c for c in sorted(continent_countries.get(continent, set())) if c != country]
                 if not wrong_options:
                     wrong_options = [c["country"] for c in cities if c["country"] != country]
                 wrong = rng.choice(wrong_options)
